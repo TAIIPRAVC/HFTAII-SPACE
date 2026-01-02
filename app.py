@@ -2,11 +2,12 @@
 Fashion Vectorizer API
 Hugging Face Spaces deployment for SentenceTransformers embeddings.
 """
+import os
 import time
 import logging
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 # Configure logging
@@ -18,6 +19,17 @@ TARGET_DIM = 512
 DEFAULT_BATCH_SIZE = 128
 # Global model instance
 model: Optional[SentenceTransformer] = None
+
+# API Key Authentication
+API_SECRET_KEY = os.environ.get("API_SECRET_KEY")
+
+async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
+    """Verify the API key from request header."""
+    if not API_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="API_SECRET_KEY not configured")
+    if x_api_key != API_SECRET_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return x_api_key
 # ============= Pydantic Models =============
 class VectorizeRequest(BaseModel):
     texts: List[str] = Field(..., min_length=1, max_length=500)
@@ -141,7 +153,7 @@ async def health_check():
         dimension=TARGET_DIM
     )
 @app.post("/vectorize", response_model=VectorizeResponse)
-async def vectorize_texts(request: VectorizeRequest):
+async def vectorize_texts(request: VectorizeRequest, _: str = Depends(verify_api_key)):
     """Encode texts into embeddings."""
     start_time = time.time()
     
@@ -169,7 +181,7 @@ async def vectorize_texts(request: VectorizeRequest):
         logger.error(f"Vectorization error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 @app.post("/vectorize/products", response_model=ProductVectorizeResponse)
-async def vectorize_products(request: ProductVectorizeRequest):
+async def vectorize_products(request: ProductVectorizeRequest, _: str = Depends(verify_api_key)):
     """Generate description + style_dna embeddings for products."""
     start_time = time.time()
     
